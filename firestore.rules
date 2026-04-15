@@ -1,0 +1,110 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.doctorId;
+    }
+    
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+    
+    function doctorIdUnchanged() {
+      return !('doctorId' in request.resource.data) || request.resource.data.doctorId == request.auth.uid;
+    }
+    
+    function doctorIdNotModified() {
+      return !('doctorId' in request.resource.data) || request.resource.data.doctorId == resource.data.doctorId;
+    }
+    
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    
+    function isValidUser() {
+      return hasOnlyAllowedFields(['uid', 'email', 'name', 'clinicName', 'doctorStampBase64', 'testCharges']) &&
+             request.resource.data.uid is string &&
+             request.resource.data.email is string &&
+             (!('name' in request.resource.data) || (request.resource.data.name is string && request.resource.data.name.size() <= 100)) &&
+             (!('clinicName' in request.resource.data) || (request.resource.data.clinicName is string && request.resource.data.clinicName.size() <= 100)) &&
+             (!('doctorStampBase64' in request.resource.data) || (request.resource.data.doctorStampBase64 is string && request.resource.data.doctorStampBase64.size() <= 1000000)) &&
+             (!('testCharges' in request.resource.data) || request.resource.data.testCharges is map);
+    }
+    
+    function isValidPatient() {
+      return hasOnlyAllowedFields(['doctorId', 'name', 'age', 'gender', 'phone', 'email', 'createdAt', 'assignedTests', 'totalBill', 'referredByDr', 'clientAddress']) &&
+             request.resource.data.doctorId is string &&
+             request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 100 &&
+             request.resource.data.age is number && request.resource.data.age >= 0 && request.resource.data.age <= 150 &&
+             request.resource.data.gender is string && request.resource.data.gender in ['Male', 'Female', 'Other'] &&
+             (!('phone' in request.resource.data) || (request.resource.data.phone is string && request.resource.data.phone.size() <= 20)) &&
+             (!('email' in request.resource.data) || (request.resource.data.email is string && request.resource.data.email.size() <= 100)) &&
+             request.resource.data.createdAt is string &&
+             (!('assignedTests' in request.resource.data) || request.resource.data.assignedTests is list) &&
+             (!('totalBill' in request.resource.data) || request.resource.data.totalBill is number) &&
+             (!('referredByDr' in request.resource.data) || (request.resource.data.referredByDr is string && request.resource.data.referredByDr.size() <= 100)) &&
+             (!('clientAddress' in request.resource.data) || (request.resource.data.clientAddress is string && request.resource.data.clientAddress.size() <= 200));
+    }
+    
+    function isValidReport() {
+      return hasOnlyAllowedFields(['doctorId', 'patientId', 'patientName', 'templateId', 'templateName', 'results', 'date', 'doctorStampBase64', 'clinicName', 'visitLabNo', 'referLabHosp', 'refClient', 'barcodeNo', 'sampleCollectionDate', 'sampleReceivedDate', 'registrationDate']) &&
+             request.resource.data.doctorId is string &&
+             request.resource.data.patientId is string &&
+             request.resource.data.patientName is string && request.resource.data.patientName.size() <= 100 &&
+             request.resource.data.templateId is string &&
+             request.resource.data.templateName is string && request.resource.data.templateName.size() <= 100 &&
+             request.resource.data.results is map &&
+             request.resource.data.date is string &&
+             (!('doctorStampBase64' in request.resource.data) || (request.resource.data.doctorStampBase64 is string && request.resource.data.doctorStampBase64.size() <= 1000000)) &&
+             (!('clinicName' in request.resource.data) || (request.resource.data.clinicName is string && request.resource.data.clinicName.size() <= 100)) &&
+             (!('visitLabNo' in request.resource.data) || (request.resource.data.visitLabNo is string && request.resource.data.visitLabNo.size() <= 50)) &&
+             (!('referLabHosp' in request.resource.data) || (request.resource.data.referLabHosp is string && request.resource.data.referLabHosp.size() <= 100)) &&
+             (!('refClient' in request.resource.data) || (request.resource.data.refClient is string && request.resource.data.refClient.size() <= 100)) &&
+             (!('barcodeNo' in request.resource.data) || (request.resource.data.barcodeNo is string && request.resource.data.barcodeNo.size() <= 50)) &&
+             (!('sampleCollectionDate' in request.resource.data) || request.resource.data.sampleCollectionDate is string) &&
+             (!('sampleReceivedDate' in request.resource.data) || request.resource.data.sampleReceivedDate is string) &&
+             (!('registrationDate' in request.resource.data) || request.resource.data.registrationDate is string);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser() && uidUnchanged();
+      allow update: if isOwner(userId) && isValidUser() && uidUnchanged();
+    }
+    
+    match /patients/{patientId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidPatient() && doctorIdUnchanged();
+      allow update: if isDocOwner() && isValidPatient() && doctorIdNotModified();
+      allow delete: if isDocOwner();
+    }
+    
+    match /reports/{reportId} {
+      allow get: if true; // Public read for QR code links
+      allow list: if isDocOwner();
+      allow create: if isAuthenticated() && isValidReport() && doctorIdUnchanged();
+      allow update: if isDocOwner() && isValidReport() && doctorIdNotModified();
+      allow delete: if isDocOwner();
+    }
+  }
+}

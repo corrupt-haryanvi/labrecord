@@ -3,49 +3,55 @@
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/lib/AuthContext';
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc, doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '@/lib/firebase';
-import { handleFirestoreError, OperationType } from '@/lib/firestore-error';
+import { createClient } from '@/lib/supabase/client';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { LAB_TEMPLATES, LabTemplate } from '@/lib/templates';
+import { LAB_TEMPLATES } from '@/lib/templates';
 import Link from 'next/link';
+import { useToast } from '@/components/Toast';
+import { ArrowLeft, User, FileText, Calendar, Check, X } from 'lucide-react';
+
+interface Patient {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+}
 
 export default function NewReportPage() {
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectedPatientId = searchParams.get('patientId');
+  const { showToast } = useToast();
+  const supabase = createClient();
   
-  const [patients, setPatients] = useState<any[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(false);
   
   const [selectedPatientId, setSelectedPatientId] = useState(preselectedPatientId || '');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [results, setResults] = useState<Record<string, string>>({});
-  
-  const [reportDetails, setReportDetails] = useState({
-    visitLabNo: '',
-    referLabHosp: 'SELF',
-    refClient: '',
-    barcodeNo: '',
-    sampleCollectionDate: new Date().toISOString().slice(0, 16),
-    sampleReceivedDate: new Date().toISOString().slice(0, 16)
-  });
+  const [testDate, setTestDate] = useState(new Date().toISOString().slice(0, 10));
+  const [notes, setNotes] = useState('');
 
   useEffect(() => {
     if (!user) return;
+    
     const fetchPatients = async () => {
-      try {
-        const q = query(collection(db, 'patients'), where('doctorId', '==', user.uid));
-        const snapshot = await getDocs(q);
-        const pts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setPatients(pts);
-      } catch (error) {
-        handleFirestoreError(error, OperationType.LIST, 'patients', auth);
+      const { data, error } = await supabase
+        .from('patients')
+        .select('id, name, phone, email')
+        .order('name');
+      
+      if (error) {
+        console.error('Error fetching patients:', error);
+      } else {
+        setPatients(data || []);
       }
     };
+    
     fetchPatients();
-  }, [user]);
+  }, [user, supabase]);
 
   const selectedTemplate = LAB_TEMPLATES.find(t => t.id === selectedTemplateId);
 
@@ -59,34 +65,31 @@ export default function NewReportPage() {
     
     setLoading(true);
     try {
-      // Get doctor profile for stamp and clinic name
-      const doctorDoc = await getDoc(doc(db, 'users', user.uid));
-      const doctorData = doctorDoc.data() || {};
-      
       const patient = patients.find(p => p.id === selectedPatientId);
       
-      const reportRef = await addDoc(collection(db, 'reports'), {
-        doctorId: user.uid,
-        patientId: selectedPatientId,
-        patientName: patient?.name || 'Unknown',
-        templateId: selectedTemplate.id,
-        templateName: selectedTemplate.name,
-        results,
-        date: new Date().toISOString(),
-        doctorStampBase64: doctorData.doctorStampBase64 || '',
-        clinicName: doctorData.clinicName || 'Lab Clinic',
-        visitLabNo: reportDetails.visitLabNo,
-        referLabHosp: reportDetails.referLabHosp,
-        refClient: reportDetails.refClient,
-        barcodeNo: reportDetails.barcodeNo,
-        sampleCollectionDate: new Date(reportDetails.sampleCollectionDate).toISOString(),
-        sampleReceivedDate: new Date(reportDetails.sampleReceivedDate).toISOString(),
-        registrationDate: patient?.createdAt || new Date().toISOString()
-      });
+      const { data, error } = await supabase.from('reports').insert({
+        user_id: user.id,
+        patient_id: selectedPatientId,
+        patient_name: patient?.name || 'Unknown',
+        test_name: selectedTemplate.name,
+        test_date: testDate,
+        results: selectedTemplate.fields.map(field => ({
+          name: field.name,
+          value: results[field.name] || '',
+          unit: field.unit,
+          normalRange: field.normalRange
+        })),
+        notes: notes || null,
+        status: 'Completed'
+      }).select().single();
+
+      if (error) throw error;
       
-      router.push(`/reports/${reportRef.id}`);
+      showToast('Report created successfully!', 'success');
+      router.push(`/reports/${data.id}`);
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'reports', auth);
+      console.error('Error creating report:', error);
+      showToast('Failed to create report. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -94,155 +97,157 @@ export default function NewReportPage() {
 
   return (
     <AppLayout>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-text-main">Create New Report</h1>
-        <Link href="/reports" className="text-text-muted hover:text-sage-primary font-semibold text-sm transition-colors">
-          Cancel
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-2">
+        <Link 
+          href="/reports" 
+          className="w-10 h-10 rounded-xl bg-bg-subtle hover:bg-border-color flex items-center justify-center transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5 text-text-muted" />
         </Link>
+        <div>
+          <h1 className="text-2xl font-semibold text-text-main">Create New Report</h1>
+          <p className="text-text-muted text-sm mt-0.5">Generate a lab report for a patient</p>
+        </div>
       </div>
 
-      <div className="max-w-3xl bg-white p-8 rounded-2xl shadow-sm border border-border-color">
-        <form onSubmit={handleSubmit} className="space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-text-muted mb-2">Select Patient *</label>
-              <select
-                required
-                className="block w-full px-3 py-2.5 border border-border-color rounded-lg shadow-sm focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                value={selectedPatientId}
-                onChange={(e) => setSelectedPatientId(e.target.value)}
-              >
-                <option value="">-- Select Patient --</option>
-                {patients.map(p => (
-                  <option key={p.id} value={p.id}>{p.name} ({p.phone || p.email || 'No contact'})</option>
-                ))}
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-text-muted mb-2">Select Test Template *</label>
-              <select
-                required
-                className="block w-full px-3 py-2.5 border border-border-color rounded-lg shadow-sm focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                value={selectedTemplateId}
-                onChange={(e) => {
-                  setSelectedTemplateId(e.target.value);
-                  setResults({}); // Reset results when template changes
-                }}
-              >
-                <option value="">-- Select Template --</option>
-                {LAB_TEMPLATES.map(t => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-border-color animate-fade-in">
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Patient & Template Selection */}
+          <div>
+            <h3 className="text-sm font-semibold text-text-main uppercase tracking-wider mb-4 flex items-center gap-2">
+              <User className="w-4 h-4 text-sage-primary" />
+              Patient & Test Selection
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-text-muted mb-2">Select Patient *</label>
+                <select
+                  required
+                  className="w-full px-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
+                  value={selectedPatientId}
+                  onChange={(e) => setSelectedPatientId(e.target.value)}
+                >
+                  <option value="">-- Select Patient --</option>
+                  {patients.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} ({p.phone || p.email || 'No contact'})</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-text-muted mb-2">Select Test Template *</label>
+                <select
+                  required
+                  className="w-full px-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
+                  value={selectedTemplateId}
+                  onChange={(e) => {
+                    setSelectedTemplateId(e.target.value);
+                    setResults({});
+                  }}
+                >
+                  <option value="">-- Select Template --</option>
+                  {LAB_TEMPLATES.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6 border-t border-border-color">
-            <div>
-              <label className="block text-sm font-medium text-text-muted mb-2">Visit/Lab No</label>
-              <input
-                type="text"
-                className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                value={reportDetails.visitLabNo}
-                onChange={(e) => setReportDetails({...reportDetails, visitLabNo: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-muted mb-2">Barcode No</label>
-              <input
-                type="text"
-                className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                value={reportDetails.barcodeNo}
-                onChange={(e) => setReportDetails({...reportDetails, barcodeNo: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-muted mb-2">Refer Lab/Hosp</label>
-              <input
-                type="text"
-                className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                value={reportDetails.referLabHosp}
-                onChange={(e) => setReportDetails({...reportDetails, referLabHosp: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-muted mb-2">Ref. Client</label>
-              <input
-                type="text"
-                className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                value={reportDetails.refClient}
-                onChange={(e) => setReportDetails({...reportDetails, refClient: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-muted mb-2">Sample Collection Date/Time</label>
-              <input
-                type="datetime-local"
-                className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                value={reportDetails.sampleCollectionDate}
-                onChange={(e) => setReportDetails({...reportDetails, sampleCollectionDate: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-muted mb-2">Sample Received Date/Time</label>
-              <input
-                type="datetime-local"
-                className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                value={reportDetails.sampleReceivedDate}
-                onChange={(e) => setReportDetails({...reportDetails, sampleReceivedDate: e.target.value})}
-              />
+              <div>
+                <label className="block text-sm font-medium text-text-muted mb-2">Test Date *</label>
+                <div className="relative">
+                  <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                  <input
+                    type="date"
+                    required
+                    className="w-full pl-11 pr-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
+                    value={testDate}
+                    onChange={(e) => setTestDate(e.target.value)}
+                  />
+                </div>
+              </div>
             </div>
           </div>
           
+          {/* Results Table */}
           {selectedTemplate && (
-            <div className="pt-6 border-t border-border-color">
-              <h3 className="text-lg font-semibold text-text-main mb-4">Enter Results for {selectedTemplate.name}</h3>
+            <div className="pt-4 border-t border-border-color animate-fade-in">
+              <h3 className="text-sm font-semibold text-text-main uppercase tracking-wider mb-4 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-sage-primary" />
+                Enter Results for {selectedTemplate.name}
+              </h3>
               
-              <div className="bg-white rounded-2xl border border-border-color overflow-hidden">
-                <table className="w-full border-collapse text-left">
+              <div className="rounded-xl border border-border-color overflow-hidden">
+                <table className="w-full">
                   <thead>
-                    <tr>
-                      <th className="bg-[#F0EEE9] p-4 text-xs font-medium text-text-muted uppercase border-b border-border-color">Parameter</th>
-                      <th className="bg-[#F0EEE9] p-4 text-xs font-medium text-text-muted uppercase border-b border-border-color">Result</th>
-                      <th className="bg-[#F0EEE9] p-4 text-xs font-medium text-text-muted uppercase border-b border-border-color">Unit</th>
-                      <th className="bg-[#F0EEE9] p-4 text-xs font-medium text-text-muted uppercase border-b border-border-color">Normal Range</th>
+                    <tr className="bg-bg-subtle">
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Parameter</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Result</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Unit</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Normal Range</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-border-color">
                     {selectedTemplate.fields.map((field, idx) => (
-                      <tr key={idx} className="hover:bg-bg-warm transition-colors">
-                        <td className="p-4 text-sm border-b border-[#F0EEE9] font-semibold text-text-main">{field.name}</td>
-                        <td className="p-4 text-sm border-b border-[#F0EEE9]">
+                      <tr key={idx} className="row-hover">
+                        <td className="px-4 py-3 text-sm font-semibold text-text-main">{field.name}</td>
+                        <td className="px-4 py-3">
                           <input
                             type="text"
                             required
-                            className="w-full px-3 py-2 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
+                            className="w-full px-3 py-2 border border-border-color rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
                             value={results[field.name] || ''}
                             onChange={(e) => handleResultChange(field.name, e.target.value)}
-                            placeholder="Result"
+                            placeholder="Enter result"
                           />
                         </td>
-                        <td className="p-4 text-sm border-b border-[#F0EEE9] text-text-muted">{field.unit}</td>
-                        <td className="p-4 text-sm border-b border-[#F0EEE9] text-text-muted italic">{field.normalRange}</td>
+                        <td className="px-4 py-3 text-sm text-text-muted">{field.unit}</td>
+                        <td className="px-4 py-3 text-sm text-text-muted italic">{field.normalRange}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+
+              {/* Notes */}
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-text-muted mb-2">Notes (Optional)</label>
+                <textarea
+                  rows={3}
+                  placeholder="Add any additional notes..."
+                  className="w-full px-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all resize-none"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
+              </div>
             </div>
           )}
           
-          <div className="flex justify-end space-x-4 pt-6 border-t border-border-color">
-            <Link href="/reports" className="px-5 py-2.5 border border-border-color rounded-lg text-text-main font-semibold text-sm hover:bg-bg-warm transition-colors">
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-4 border-t border-border-color">
+            <Link 
+              href="/reports" 
+              className="flex items-center gap-2 px-5 py-3 border border-border-color rounded-xl text-text-main font-medium text-sm hover:bg-bg-subtle transition-colors btn-press"
+            >
+              <X className="w-4 h-4" />
               Cancel
             </Link>
             <button
               type="submit"
               disabled={loading || !selectedTemplateId || !selectedPatientId}
-              className="flex items-center px-6 py-2.5 bg-sage-primary text-white rounded-lg hover:bg-sage-dark font-semibold text-sm transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-sage-primary to-sage-dark text-white rounded-xl font-medium text-sm hover:shadow-lg hover:shadow-sage-primary/25 transition-all disabled:opacity-50 btn-press"
             >
-              {loading ? 'Saving...' : 'Generate Report'}
+              {loading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  Generate Report
+                </>
+              )}
             </button>
           </div>
         </form>

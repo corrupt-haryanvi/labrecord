@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { QRCodeSVG } from 'qrcode.react';
 import { format } from 'date-fns';
 import { LAB_TEMPLATES } from '@/lib/templates';
-import { Download, ArrowLeft, Printer } from 'lucide-react';
+import { Download, ArrowLeft, Printer, FileText, Edit3, Activity } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/AuthContext';
 import jsPDF from 'jspdf';
@@ -32,7 +32,6 @@ export default function ReportViewPage() {
           const reportData = docSnap.data();
           setReport({ id: docSnap.id, ...reportData });
           
-          // Fetch patient details
           const patientRef = doc(db, 'patients', reportData.patientId);
           const patientSnap = await getDoc(patientRef);
           if (patientSnap.exists()) {
@@ -54,38 +53,34 @@ export default function ReportViewPage() {
   const handleDownloadPDF = () => {
     if (!report || !patient) return;
     
-    const doc = new jsPDF();
+    const pdfDoc = new jsPDF();
     const template = LAB_TEMPLATES.find(t => t.id === report.templateId);
     if (!template) return;
 
-    // Header
-    doc.setFontSize(20);
-    doc.text(report.clinicName || 'Lab Report', 105, 20, { align: 'center' });
+    pdfDoc.setFontSize(20);
+    pdfDoc.text(report.clinicName || 'Lab Report', 105, 20, { align: 'center' });
     
-    doc.setFontSize(10);
+    pdfDoc.setFontSize(10);
     
-    // Left column
-    doc.text(`Patient NAME: ${patient.name}`, 14, 40);
-    doc.text(`Age/Gender: ${patient.age} Y / ${patient.gender.charAt(0)}`, 14, 46);
-    doc.text(`Refer Lab/Hosp: ${report.referLabHosp || 'SELF'}`, 14, 52);
-    doc.text(`Referred BY Dr.: ${patient.referredByDr || 'SELF'}`, 14, 58);
-    doc.text(`Ref.Client: ${report.refClient || '-'}`, 14, 64);
-    doc.text(`Barcode NO: ${report.barcodeNo || '-'}`, 14, 70);
+    pdfDoc.text(`Patient NAME: ${patient.name}`, 14, 40);
+    pdfDoc.text(`Age/Gender: ${patient.age} Y / ${patient.gender.charAt(0)}`, 14, 46);
+    pdfDoc.text(`Refer Lab/Hosp: ${report.referLabHosp || 'SELF'}`, 14, 52);
+    pdfDoc.text(`Referred BY Dr.: ${patient.referredByDr || 'SELF'}`, 14, 58);
+    pdfDoc.text(`Ref.Client: ${report.refClient || '-'}`, 14, 64);
+    pdfDoc.text(`Barcode NO: ${report.barcodeNo || '-'}`, 14, 70);
     
-    // Right column
-    doc.text(`Visit/LabNo: ${report.visitLabNo || '-'}`, 110, 40);
-    doc.text(`Registration Date: ${report.registrationDate ? format(new Date(report.registrationDate), 'dd/MMM/yyyy hh:mm a') : '-'}`, 110, 46);
-    doc.text(`Sample Collection: ${report.sampleCollectionDate ? format(new Date(report.sampleCollectionDate), 'dd/MMM/yyyy hh:mm a') : '-'}`, 110, 52);
-    doc.text(`Sample Received: ${report.sampleReceivedDate ? format(new Date(report.sampleReceivedDate), 'dd/MMM/yyyy hh:mm a') : '-'}`, 110, 58);
-    doc.text(`Report Generated: ${report.date ? format(new Date(report.date), 'dd/MMM/yyyy hh:mm a') : '-'}`, 110, 64);
-    doc.text(`Client Address: ${patient.clientAddress || '-'}`, 110, 70);
+    pdfDoc.text(`Visit/LabNo: ${report.visitLabNo || '-'}`, 110, 40);
+    pdfDoc.text(`Registration Date: ${report.registrationDate ? format(new Date(report.registrationDate), 'dd/MMM/yyyy hh:mm a') : '-'}`, 110, 46);
+    pdfDoc.text(`Sample Collection: ${report.sampleCollectionDate ? format(new Date(report.sampleCollectionDate), 'dd/MMM/yyyy hh:mm a') : '-'}`, 110, 52);
+    pdfDoc.text(`Sample Received: ${report.sampleReceivedDate ? format(new Date(report.sampleReceivedDate), 'dd/MMM/yyyy hh:mm a') : '-'}`, 110, 58);
+    pdfDoc.text(`Report Generated: ${report.date ? format(new Date(report.date), 'dd/MMM/yyyy hh:mm a') : '-'}`, 110, 64);
+    pdfDoc.text(`Client Address: ${patient.clientAddress || '-'}`, 110, 70);
     
-    doc.line(14, 75, 196, 75);
+    pdfDoc.line(14, 75, 196, 75);
     
-    doc.setFontSize(14);
-    doc.text(report.templateName, 105, 85, { align: 'center' });
+    pdfDoc.setFontSize(14);
+    pdfDoc.text(report.templateName, 105, 85, { align: 'center' });
 
-    // Table
     const tableData = template.fields.map(field => [
       field.name,
       report.results[field.name] || '-',
@@ -93,33 +88,55 @@ export default function ReportViewPage() {
       field.normalRange
     ]);
 
-    autoTable(doc, {
+    autoTable(pdfDoc, {
       startY: 95,
       head: [['Test Name', 'Result', 'Unit', 'Normal Range']],
       body: tableData,
       theme: 'grid',
-      headStyles: { fillColor: [41, 128, 185] },
+      headStyles: { fillColor: [13, 148, 136] },
     });
 
-    // Footer / Stamp
-    const finalY = (doc as any).lastAutoTable.finalY || 150;
+    const finalY = (pdfDoc as any).lastAutoTable.finalY || 150;
     
     if (report.doctorStampBase64) {
       try {
-        doc.addImage(report.doctorStampBase64, 'PNG', 140, finalY + 20, 40, 20);
+        pdfDoc.addImage(report.doctorStampBase64, 'PNG', 140, finalY + 20, 40, 20);
       } catch (e) {
         console.error("Error adding stamp image to PDF", e);
       }
     }
     
-    doc.setFontSize(10);
-    doc.text('Authorized Signature', 150, finalY + 45);
+    pdfDoc.setFontSize(10);
+    pdfDoc.text('Authorized Signature', 150, finalY + 45);
     
-    doc.save(`${patient.name}_${report.templateName}.pdf`);
+    pdfDoc.save(`${patient.name}_${report.templateName}.pdf`);
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading report...</div>;
-  if (error) return <div className="min-h-screen flex items-center justify-center text-red-500">{error}</div>;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bg-warm">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-full border-4 border-sage-light border-t-sage-primary animate-spin" />
+          <span className="text-text-muted font-medium">Loading report...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-bg-warm gap-4">
+        <div className="w-16 h-16 rounded-2xl bg-red-100 flex items-center justify-center">
+          <FileText className="w-8 h-8 text-red-500" />
+        </div>
+        <p className="text-red-500 font-medium">{error}</p>
+        <Link href="/reports" className="text-sage-primary hover:text-sage-dark font-medium">
+          Back to Reports
+        </Link>
+      </div>
+    );
+  }
+
   if (!report || !patient) return null;
 
   const template = LAB_TEMPLATES.find(t => t.id === report.templateId);
@@ -129,109 +146,118 @@ export default function ReportViewPage() {
     <div className="min-h-screen bg-bg-warm py-8 px-4 sm:px-6 lg:px-8 font-sans text-text-main">
       <div className="max-w-4xl mx-auto flex flex-col gap-6">
         {/* Actions Bar */}
-        <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border border-border-color">
+        <div className="flex justify-between items-center bg-white p-5 rounded-2xl shadow-sm border border-border-color animate-fade-in">
           <div>
             {user ? (
-              <Link href="/reports" className="flex items-center text-text-muted hover:text-sage-primary font-semibold text-sm transition-colors">
-                <ArrowLeft className="w-4 h-4 mr-2" />
+              <Link href="/reports" className="flex items-center gap-2 text-text-muted hover:text-sage-primary font-medium text-sm transition-colors">
+                <ArrowLeft className="w-4 h-4" />
                 Back to Reports
               </Link>
             ) : (
-              <span className="text-text-muted font-semibold text-sm">Lab Report Viewer</span>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-gradient-to-br from-sage-primary to-sage-dark rounded-lg flex items-center justify-center">
+                  <Activity className="w-4 h-4 text-white" />
+                </div>
+                <span className="font-semibold text-text-main">LabManager</span>
+              </div>
             )}
           </div>
-          <div className="flex space-x-3">
+          <div className="flex gap-2">
             {user && (
               <Link 
                 href={`/reports/${reportId}/edit`}
-                className="flex items-center px-5 py-2.5 bg-white border border-border-color text-text-main rounded-lg hover:bg-bg-warm font-semibold text-sm transition-colors"
+                className="flex items-center gap-2 px-4 py-2.5 bg-white border border-border-color text-text-main rounded-xl hover:bg-bg-subtle font-medium text-sm transition-colors btn-press"
               >
+                <Edit3 className="w-4 h-4" />
                 Edit
               </Link>
             )}
             <button 
               onClick={() => window.print()}
-              className="flex items-center px-5 py-2.5 bg-sage-light text-sage-dark rounded-lg hover:bg-[#c8d4c8] font-semibold text-sm transition-colors"
+              className="flex items-center gap-2 px-4 py-2.5 bg-bg-subtle text-text-main rounded-xl hover:bg-border-color font-medium text-sm transition-colors btn-press"
             >
-              <Printer className="w-4 h-4 mr-2" />
+              <Printer className="w-4 h-4" />
               Print
             </button>
             <button 
               onClick={handleDownloadPDF}
-              className="flex items-center px-5 py-2.5 bg-sage-primary text-white rounded-lg hover:bg-sage-dark font-semibold text-sm transition-colors"
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-sage-primary to-sage-dark text-white rounded-xl hover:shadow-lg hover:shadow-sage-primary/25 font-medium text-sm transition-all btn-press"
             >
-              <Download className="w-4 h-4 mr-2" />
+              <Download className="w-4 h-4" />
               Download PDF
             </button>
           </div>
         </div>
 
         {/* Report Paper */}
-        <div className="bg-white p-8 sm:p-12 rounded-2xl shadow-sm border border-border-color print:shadow-none print:border-none flex flex-col gap-8">
+        <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-sm border border-border-color print:shadow-none print:border-none flex flex-col gap-8 animate-scale-in">
           {/* Header */}
           <div className="text-center border-b border-border-color pb-6">
-            <h1 className="font-serif text-3xl font-bold text-sage-primary uppercase tracking-wider flex items-center justify-center gap-2">
-              <div className="w-3 h-3 bg-accent-warm rounded-full"></div>
+            <div className="inline-flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 bg-gradient-to-br from-sage-primary to-sage-dark rounded-xl flex items-center justify-center">
+                <Activity className="w-5 h-5 text-white" />
+              </div>
+            </div>
+            <h1 className="text-2xl font-semibold text-text-main tracking-tight">
               {report.clinicName || 'Laboratory Report'}
             </h1>
           </div>
 
           {/* Patient Details & QR */}
-          <div className="flex justify-between items-start">
-            <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm w-full pr-8">
-              <div className="space-y-2">
-                <div className="flex"><span className="font-bold text-text-muted w-32">Patient NAME</span><span className="font-semibold">: {patient.name}</span></div>
-                <div className="flex"><span className="font-bold text-text-muted w-32">Age/Gender</span><span>: {patient.age} Y / {patient.gender.charAt(0)}</span></div>
-                <div className="flex"><span className="font-bold text-text-muted w-32">Refer Lab/Hosp</span><span>: {report.referLabHosp || 'SELF'}</span></div>
-                <div className="flex"><span className="font-bold text-text-muted w-32">Referred BY Dr.</span><span>: {patient.referredByDr || 'SELF'}</span></div>
-                <div className="flex"><span className="font-bold text-text-muted w-32">Ref.Client</span><span>: {report.refClient || '-'}</span></div>
-                <div className="flex"><span className="font-bold text-text-muted w-32">Barcode NO</span><span className="font-semibold">: {report.barcodeNo || '-'}</span></div>
+          <div className="flex justify-between items-start gap-6">
+            <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-sm flex-1">
+              <div className="space-y-1.5">
+                <div className="flex"><span className="font-medium text-text-muted w-32">Patient NAME</span><span className="font-semibold text-text-main">: {patient.name}</span></div>
+                <div className="flex"><span className="font-medium text-text-muted w-32">Age/Gender</span><span className="text-text-main">: {patient.age} Y / {patient.gender.charAt(0)}</span></div>
+                <div className="flex"><span className="font-medium text-text-muted w-32">Refer Lab/Hosp</span><span className="text-text-main">: {report.referLabHosp || 'SELF'}</span></div>
+                <div className="flex"><span className="font-medium text-text-muted w-32">Referred BY Dr.</span><span className="text-text-main">: {patient.referredByDr || 'SELF'}</span></div>
+                <div className="flex"><span className="font-medium text-text-muted w-32">Ref.Client</span><span className="text-text-main">: {report.refClient || '-'}</span></div>
+                <div className="flex"><span className="font-medium text-text-muted w-32">Barcode NO</span><span className="font-semibold text-text-main">: {report.barcodeNo || '-'}</span></div>
               </div>
-              <div className="space-y-2">
-                <div className="flex"><span className="font-bold text-text-muted w-36">Visit/LabNo</span><span className="font-semibold">: {report.visitLabNo || '-'}</span></div>
-                <div className="flex"><span className="font-bold text-text-muted w-36">Registration Date</span><span>: {report.registrationDate ? format(new Date(report.registrationDate), 'dd/MMM/yyyy hh:mm a') : '-'}</span></div>
-                <div className="flex"><span className="font-bold text-text-muted w-36">Sample Collection</span><span>: {report.sampleCollectionDate ? format(new Date(report.sampleCollectionDate), 'dd/MMM/yyyy hh:mm a') : '-'}</span></div>
-                <div className="flex"><span className="font-bold text-text-muted w-36">Sample Received</span><span>: {report.sampleReceivedDate ? format(new Date(report.sampleReceivedDate), 'dd/MMM/yyyy hh:mm a') : '-'}</span></div>
-                <div className="flex"><span className="font-bold text-text-muted w-36">Report Generated</span><span>: {report.date ? format(new Date(report.date), 'dd/MMM/yyyy hh:mm a') : '-'}</span></div>
-                <div className="flex"><span className="font-bold text-text-muted w-36">Client Address</span><span>: {patient.clientAddress || '-'}</span></div>
+              <div className="space-y-1.5">
+                <div className="flex"><span className="font-medium text-text-muted w-36">Visit/LabNo</span><span className="font-semibold text-text-main">: {report.visitLabNo || '-'}</span></div>
+                <div className="flex"><span className="font-medium text-text-muted w-36">Registration Date</span><span className="text-text-main">: {report.registrationDate ? format(new Date(report.registrationDate), 'dd/MMM/yyyy hh:mm a') : '-'}</span></div>
+                <div className="flex"><span className="font-medium text-text-muted w-36">Sample Collection</span><span className="text-text-main">: {report.sampleCollectionDate ? format(new Date(report.sampleCollectionDate), 'dd/MMM/yyyy hh:mm a') : '-'}</span></div>
+                <div className="flex"><span className="font-medium text-text-muted w-36">Sample Received</span><span className="text-text-main">: {report.sampleReceivedDate ? format(new Date(report.sampleReceivedDate), 'dd/MMM/yyyy hh:mm a') : '-'}</span></div>
+                <div className="flex"><span className="font-medium text-text-muted w-36">Report Generated</span><span className="text-text-main">: {report.date ? format(new Date(report.date), 'dd/MMM/yyyy hh:mm a') : '-'}</span></div>
+                <div className="flex"><span className="font-medium text-text-muted w-36">Client Address</span><span className="text-text-main">: {patient.clientAddress || '-'}</span></div>
               </div>
             </div>
-            <div className="flex items-center gap-4 bg-white p-3 rounded-xl border border-border-color shrink-0">
-              <div className="w-16 h-16 bg-text-main p-1 rounded-sm">
-                <QRCodeSVG value={reportUrl} size={56} bgColor="#2D302D" fgColor="#FFFFFF" />
+            <div className="flex items-center gap-3 p-4 bg-bg-subtle rounded-xl shrink-0">
+              <div className="w-16 h-16 bg-text-main p-1.5 rounded-lg">
+                <QRCodeSVG value={reportUrl} size={52} bgColor="#1E293B" fgColor="#FFFFFF" />
               </div>
-              <div className="text-[11px] text-text-muted w-28">
-                <strong className="text-text-main">Scan to View</strong><br/>
-                Instant secure access to clinical results.
+              <div className="text-xs text-text-muted w-24">
+                <strong className="text-text-main block mb-1">Scan to View</strong>
+                Instant secure access to results
               </div>
             </div>
           </div>
 
           {/* Test Results */}
           <div>
-            <div className="mb-4">
-              <h2 className="text-xl font-bold text-text-main">
-                {report.templateName}
-              </h2>
-            </div>
+            <h2 className="text-lg font-semibold text-text-main mb-4 flex items-center gap-2">
+              <FileText className="w-5 h-5 text-sage-primary" />
+              {report.templateName}
+            </h2>
             
-            <div className="bg-white rounded-2xl border border-border-color overflow-hidden">
-              <table className="w-full border-collapse text-left">
+            <div className="rounded-xl border border-border-color overflow-hidden">
+              <table className="w-full">
                 <thead>
-                  <tr>
-                    <th className="bg-[#F0EEE9] p-4 text-xs font-medium text-text-muted uppercase border-b border-border-color">Parameter</th>
-                    <th className="bg-[#F0EEE9] p-4 text-xs font-medium text-text-muted uppercase border-b border-border-color">Result</th>
-                    <th className="bg-[#F0EEE9] p-4 text-xs font-medium text-text-muted uppercase border-b border-border-color">Unit</th>
-                    <th className="bg-[#F0EEE9] p-4 text-xs font-medium text-text-muted uppercase border-b border-border-color">Normal Range</th>
+                  <tr className="bg-gradient-to-r from-sage-primary to-sage-dark text-white">
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider">Parameter</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider">Result</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider">Unit</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider">Normal Range</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-border-color">
                   {template?.fields.map((field, idx) => (
-                    <tr key={idx}>
-                      <td className="p-4 text-sm border-b border-[#F0EEE9] font-semibold text-text-main">{field.name}</td>
-                      <td className="p-4 text-sm border-b border-[#F0EEE9] font-bold text-sage-primary">{report.results[field.name] || '-'}</td>
-                      <td className="p-4 text-sm border-b border-[#F0EEE9] text-text-muted">{field.unit}</td>
-                      <td className="p-4 text-sm border-b border-[#F0EEE9] text-text-muted italic">{field.normalRange}</td>
+                    <tr key={idx} className="row-hover">
+                      <td className="px-4 py-3 text-sm font-medium text-text-main">{field.name}</td>
+                      <td className="px-4 py-3 text-sm font-bold text-sage-primary">{report.results[field.name] || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-text-muted">{field.unit}</td>
+                      <td className="px-4 py-3 text-sm text-text-muted italic">{field.normalRange}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -240,20 +266,25 @@ export default function ReportViewPage() {
           </div>
 
           {/* Footer / Stamp */}
-          <div className="flex justify-end mt-8 pt-8 border-t border-border-color">
-            <div className="flex flex-col items-center gap-2 opacity-80">
+          <div className="flex justify-end mt-4 pt-6 border-t border-border-color">
+            <div className="flex flex-col items-center gap-2">
               {report.doctorStampBase64 ? (
-                <img src={report.doctorStampBase64} alt="Doctor Stamp" className="h-20 w-20 object-contain rounded-full border-2 border-dashed border-sage-primary p-1" />
+                <img src={report.doctorStampBase64} alt="Doctor Stamp" className="h-20 w-20 object-contain rounded-xl border-2 border-dashed border-sage-primary/50 p-2 bg-sage-light/30" />
               ) : (
-                <div className="w-20 h-20 border-2 border-dashed border-sage-primary rounded-full flex items-center justify-center text-[10px] text-center text-sage-primary font-bold uppercase">
+                <div className="w-20 h-20 border-2 border-dashed border-sage-primary/50 rounded-xl flex items-center justify-center text-[10px] text-center text-sage-primary font-medium uppercase bg-sage-light/30">
                   No<br/>Stamp
                 </div>
               )}
-              <div className="text-[10px] uppercase text-text-muted font-semibold">
-                Electronic Signature Applied
+              <div className="text-[10px] uppercase text-text-muted font-medium tracking-wider">
+                Electronic Signature
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Footer */}
+        <div className="text-center text-xs text-text-muted py-4">
+          Generated by LabManager - Secure Lab Report Management
         </div>
       </div>
     </div>

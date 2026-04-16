@@ -2,19 +2,19 @@
 
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/lib/AuthContext';
-import { useState, useEffect } from 'react';
-import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '@/lib/firebase';
-import { handleFirestoreError, OperationType } from '@/lib/firestore-error';
+import { useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { LAB_TEMPLATES } from '@/lib/templates';
+import { useToast } from '@/components/Toast';
+import { ArrowLeft, User, Phone, Mail, MapPin, Check, X } from 'lucide-react';
 
 export default function NewPatientPage() {
   const { user } = useAuth();
   const router = useRouter();
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
-  const [testCharges, setTestCharges] = useState<Record<string, number>>({});
+  const supabase = createClient();
   
   const [formData, setFormData] = useState({
     name: '',
@@ -22,37 +22,8 @@ export default function NewPatientPage() {
     gender: 'Male',
     phone: '',
     email: '',
-    referredByDr: '',
-    clientAddress: ''
+    address: ''
   });
-  
-  const [selectedTests, setSelectedTests] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (!user) return;
-    const fetchCharges = async () => {
-      try {
-        const docRef = doc(db, 'users', user.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          setTestCharges(docSnap.data().testCharges || {});
-        }
-      } catch (error) {
-        console.error("Error fetching test charges:", error);
-      }
-    };
-    fetchCharges();
-  }, [user]);
-
-  const handleTestToggle = (templateId: string) => {
-    setSelectedTests(prev => 
-      prev.includes(templateId) 
-        ? prev.filter(id => id !== templateId)
-        : [...prev, templateId]
-    );
-  };
-
-  const totalBill = selectedTests.reduce((sum, testId) => sum + (testCharges[testId] || 0), 0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,22 +31,23 @@ export default function NewPatientPage() {
     
     setLoading(true);
     try {
-      await addDoc(collection(db, 'patients'), {
-        doctorId: user.uid,
+      const { error } = await supabase.from('patients').insert({
+        user_id: user.id,
         name: formData.name,
         age: parseInt(formData.age),
         gender: formData.gender,
-        phone: formData.phone,
-        email: formData.email,
-        referredByDr: formData.referredByDr,
-        clientAddress: formData.clientAddress,
-        createdAt: new Date().toISOString(),
-        assignedTests: selectedTests,
-        totalBill: totalBill
+        phone: formData.phone || null,
+        email: formData.email || null,
+        address: formData.address || null
       });
+
+      if (error) throw error;
+      
+      showToast('Patient created successfully!', 'success');
       router.push('/patients');
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'patients', auth);
+      console.error('Error creating patient:', error);
+      showToast('Failed to create patient. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -83,142 +55,147 @@ export default function NewPatientPage() {
 
   return (
     <AppLayout>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-text-main">Add New Patient</h1>
-        <Link href="/patients" className="text-text-muted hover:text-sage-primary font-semibold text-sm transition-colors">
-          Cancel
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-2">
+        <Link 
+          href="/patients" 
+          className="w-10 h-10 rounded-xl bg-bg-subtle hover:bg-border-color flex items-center justify-center transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5 text-text-muted" />
         </Link>
+        <div>
+          <h1 className="text-2xl font-semibold text-text-main">Add New Patient</h1>
+          <p className="text-text-muted text-sm mt-0.5">Fill in the patient details below</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 max-w-2xl bg-white p-8 rounded-2xl shadow-sm border border-border-color h-fit">
-          <form id="patient-form" onSubmit={handleSubmit} className="space-y-6">
+      <div className="max-w-2xl">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-border-color animate-fade-in">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Personal Info Section */}
             <div>
-              <label className="block text-sm font-medium text-text-muted mb-2">Full Name *</label>
-              <input
-                type="text"
-                required
-                className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
-              />
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">Age *</label>
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  max="150"
-                  className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                  value={formData.age}
-                  onChange={(e) => setFormData({...formData, age: e.target.value})}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">Gender *</label>
-                <select
-                  required
-                  className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                  value={formData.gender}
-                  onChange={(e) => setFormData({...formData, gender: e.target.value})}
-                >
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">Phone</label>
-                <input
-                  type="tel"
-                  className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                  value={formData.phone}
-                  onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">Email</label>
-                <input
-                  type="email"
-                  className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                  value={formData.email}
-                  onChange={(e) => setFormData({...formData, email: e.target.value})}
-                />
+              <h3 className="text-sm font-semibold text-text-main uppercase tracking-wider mb-4 flex items-center gap-2">
+                <User className="w-4 h-4 text-sage-primary" />
+                Personal Information
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-text-muted mb-2">Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Enter patient name"
+                    className="w-full px-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
+                    value={formData.name}
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-muted mb-2">Age *</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    max="150"
+                    placeholder="Age"
+                    className="w-full px-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
+                    value={formData.age}
+                    onChange={(e) => setFormData({...formData, age: e.target.value})}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-muted mb-2">Gender *</label>
+                  <select
+                    required
+                    className="w-full px-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
+                    value={formData.gender}
+                    onChange={(e) => setFormData({...formData, gender: e.target.value})}
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">Referred By Dr.</label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                  value={formData.referredByDr}
-                  onChange={(e) => setFormData({...formData, referredByDr: e.target.value})}
-                  placeholder="e.g. SELF"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">Client Address</label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                  value={formData.clientAddress}
-                  onChange={(e) => setFormData({...formData, clientAddress: e.target.value})}
-                />
-              </div>
-            </div>
-          </form>
-        </div>
 
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-border-color h-fit">
-          <h2 className="text-xl font-bold text-text-main mb-6">Assign Tests & Billing</h2>
-          
-          <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 mb-6">
-            {LAB_TEMPLATES.map(template => {
-              const charge = testCharges[template.id] || 0;
-              return (
-                <label key={template.id} className="flex items-center justify-between p-3 bg-bg-warm rounded-lg border border-border-color cursor-pointer hover:bg-[#F0EEE9] transition-colors">
-                  <div className="flex items-center">
+            {/* Contact Info Section */}
+            <div className="pt-4 border-t border-border-color">
+              <h3 className="text-sm font-semibold text-text-main uppercase tracking-wider mb-4 flex items-center gap-2">
+                <Phone className="w-4 h-4 text-sage-primary" />
+                Contact Information
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-text-muted mb-2">Phone</label>
+                  <div className="relative">
+                    <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                     <input
-                      type="checkbox"
-                      className="w-4 h-4 text-sage-primary border-border-color rounded focus:ring-sage-primary"
-                      checked={selectedTests.includes(template.id)}
-                      onChange={() => handleTestToggle(template.id)}
+                      type="tel"
+                      placeholder="Phone number"
+                      className="w-full pl-11 pr-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({...formData, phone: e.target.value})}
                     />
-                    <span className="ml-3 font-semibold text-text-main text-sm">{template.name}</span>
                   </div>
-                  <span className="text-text-muted text-sm">₹{charge.toFixed(2)}</span>
-                </label>
-              );
-            })}
-          </div>
-
-          <div className="pt-4 border-t border-border-color">
-            <div className="flex justify-between items-center mb-6">
-              <span className="font-bold text-text-main">Total Bill</span>
-              <span className="text-2xl font-bold text-sage-primary">₹{totalBill.toFixed(2)}</span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-muted mb-2">Email</label>
+                  <div className="relative">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                    <input
+                      type="email"
+                      placeholder="Email address"
+                      className="w-full pl-11 pr-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
+                      value={formData.email}
+                      onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    />
+                  </div>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-text-muted mb-2">Address</label>
+                  <div className="relative">
+                    <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                    <input
+                      type="text"
+                      placeholder="Patient address"
+                      className="w-full pl-11 pr-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
+                      value={formData.address}
+                      onChange={(e) => setFormData({...formData, address: e.target.value})}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="flex justify-end space-x-4">
-              <Link href="/patients" className="px-5 py-2.5 border border-border-color rounded-lg text-text-main font-semibold text-sm hover:bg-bg-warm transition-colors">
+            {/* Actions */}
+            <div className="flex justify-end gap-3 pt-4 border-t border-border-color">
+              <Link 
+                href="/patients" 
+                className="flex items-center gap-2 px-5 py-3 border border-border-color rounded-xl text-text-main font-medium text-sm hover:bg-bg-subtle transition-colors btn-press"
+              >
+                <X className="w-4 h-4" />
                 Cancel
               </Link>
               <button
                 type="submit"
-                form="patient-form"
                 disabled={loading}
-                className="flex items-center px-6 py-2.5 bg-sage-primary text-white rounded-lg hover:bg-sage-dark font-semibold text-sm transition-colors disabled:opacity-50"
+                className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-sage-primary to-sage-dark text-white rounded-xl font-medium text-sm hover:shadow-lg hover:shadow-sage-primary/25 transition-all disabled:opacity-50 btn-press"
               >
-                {loading ? 'Saving...' : 'Save Patient'}
+                {loading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    Save Patient
+                  </>
+                )}
               </button>
             </div>
-          </div>
+          </form>
         </div>
       </div>
     </AppLayout>

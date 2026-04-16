@@ -7,9 +7,12 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db, auth } from '@/lib/firebase';
 import { handleFirestoreError, OperationType } from '@/lib/firestore-error';
 import { LAB_TEMPLATES } from '@/lib/templates';
+import { useToast } from '@/components/Toast';
+import { User, Building, Stamp, IndianRupee, Save, Upload, Image } from 'lucide-react';
 
 export default function SettingsPage() {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   
@@ -77,89 +80,135 @@ export default function SettingsPage() {
         doctorStampBase64: formData.doctorStampBase64,
         testCharges: testCharges
       });
-      alert('Settings updated successfully!');
+      showToast('Settings updated successfully!', 'success');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`, auth);
+      showToast('Failed to update settings. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
   if (fetching) {
-    return <AppLayout><div className="p-8">Loading profile...</div></AppLayout>;
+    return (
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-10 h-10 border-4 border-sage-light border-t-sage-primary rounded-full animate-spin" />
+            <span className="text-text-muted font-medium">Loading settings...</span>
+          </div>
+        </div>
+      </AppLayout>
+    );
   }
 
   return (
     <AppLayout>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-text-main">Doctor Profile & Settings</h1>
+      {/* Header */}
+      <div className="mb-2">
+        <h1 className="text-2xl font-semibold text-text-main">Settings</h1>
+        <p className="text-text-muted text-sm mt-1">Manage your profile and test charges</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-border-color h-fit">
-          <h2 className="text-xl font-bold text-text-main mb-6">Profile Information</h2>
-          <form id="settings-form" onSubmit={handleSubmit} className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Profile Card */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-border-color animate-fade-in">
+          <h2 className="text-lg font-semibold text-text-main mb-6 flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-sage-light flex items-center justify-center">
+              <User className="w-4 h-4 text-sage-primary" />
+            </div>
+            Profile Information
+          </h2>
+          
+          <form id="settings-form" onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-sm font-medium text-text-muted mb-2">Doctor Name</label>
-              <input
-                type="text"
-                placeholder="e.g. Dr. John Doe"
-                className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
-              />
+              <div className="relative">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                <input
+                  type="text"
+                  placeholder="e.g. Dr. John Doe"
+                  className="w-full pl-11 pr-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                />
+              </div>
             </div>
             
             <div>
               <label className="block text-sm font-medium text-text-muted mb-2">Clinic / Hospital Name</label>
-              <input
-                type="text"
-                className="w-full px-3 py-2.5 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-bg-warm font-semibold text-text-main"
-                value={formData.clinicName}
-                onChange={(e) => setFormData({...formData, clinicName: e.target.value})}
-              />
+              <div className="relative">
+                <Building className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+                <input
+                  type="text"
+                  placeholder="Enter clinic name"
+                  className="w-full pl-11 pr-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
+                  value={formData.clinicName}
+                  onChange={(e) => setFormData({...formData, clinicName: e.target.value})}
+                />
+              </div>
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-text-muted mb-2">Doctor Stamp / Signature</label>
-              <div className="flex items-center space-x-6">
-                <div className="flex-shrink-0 h-24 w-48 border-2 border-dashed border-border-color rounded-lg flex items-center justify-center overflow-hidden bg-bg-warm">
+              <label className="block text-sm font-medium text-text-muted mb-2 flex items-center gap-2">
+                <Stamp className="w-4 h-4" />
+                Doctor Stamp / Signature
+              </label>
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-48 h-24 border-2 border-dashed border-border-color rounded-xl flex items-center justify-center overflow-hidden bg-bg-warm/50 transition-colors hover:border-sage-primary/50">
                   {formData.doctorStampBase64 ? (
                     <img src={formData.doctorStampBase64} alt="Stamp" className="max-h-full max-w-full object-contain" />
                   ) : (
-                    <span className="text-text-muted text-sm font-medium">No stamp uploaded</span>
+                    <div className="flex flex-col items-center gap-1 text-text-muted">
+                      <Image className="w-6 h-6" />
+                      <span className="text-xs font-medium">No stamp</span>
+                    </div>
                   )}
                 </div>
-                <div>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="block w-full text-sm text-text-muted file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-sage-light file:text-sage-dark hover:file:bg-[#c8d4c8] cursor-pointer"
-                  />
-                  <p className="mt-2 text-xs text-text-muted">PNG or JPG. Max 1MB.</p>
+                <div className="flex-1">
+                  <label className="flex items-center gap-2 px-4 py-2.5 bg-bg-subtle hover:bg-border-color rounded-xl cursor-pointer transition-colors btn-press">
+                    <Upload className="w-4 h-4 text-text-muted" />
+                    <span className="text-sm font-medium text-text-main">Upload Image</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  <p className="mt-2 text-xs text-text-muted">PNG or JPG. Max 1MB recommended.</p>
                 </div>
               </div>
             </div>
           </form>
         </div>
 
-        <div className="bg-white p-8 rounded-2xl shadow-sm border border-border-color h-fit">
-          <h2 className="text-xl font-bold text-text-main mb-6">Test Charges Configuration</h2>
-          <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+        {/* Test Charges Card */}
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-border-color animate-slide-in">
+          <h2 className="text-lg font-semibold text-text-main mb-6 flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+              <IndianRupee className="w-4 h-4 text-amber-600" />
+            </div>
+            Test Charges
+          </h2>
+          
+          <div className="space-y-2 max-h-[400px] overflow-y-auto scrollbar-thin pr-1">
             {LAB_TEMPLATES.map(template => (
-              <div key={template.id} className="flex items-center justify-between p-4 bg-bg-warm rounded-lg border border-border-color">
-                <div className="font-semibold text-text-main">{template.name}</div>
-                <div className="flex items-center">
-                  <span className="text-text-muted mr-2">₹</span>
+              <div 
+                key={template.id} 
+                className="flex items-center justify-between p-4 bg-bg-warm/50 rounded-xl border border-border-color hover:border-sage-primary/30 transition-colors"
+              >
+                <span className="font-medium text-text-main">{template.name}</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-text-muted font-medium">₹</span>
                   <input
                     type="number"
                     min="0"
-                    step="0.01"
-                    className="w-24 px-3 py-2 border border-border-color rounded-lg focus:outline-none focus:ring-sage-primary focus:border-sage-primary bg-white font-semibold text-text-main text-right"
+                    step="1"
+                    className="w-24 px-3 py-2 border border-border-color rounded-lg focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-white font-semibold text-text-main text-right transition-all"
                     value={testCharges[template.id] || ''}
                     onChange={(e) => handleChargeChange(template.id, e.target.value)}
-                    placeholder="0.00"
+                    placeholder="0"
                   />
                 </div>
               </div>
@@ -168,14 +217,25 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="mt-8 flex justify-end">
+      {/* Save Button */}
+      <div className="mt-6 flex justify-end">
         <button
           type="submit"
           form="settings-form"
           disabled={loading}
-          className="flex items-center px-8 py-3 bg-sage-primary text-white rounded-lg hover:bg-sage-dark font-semibold text-sm transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-sage-primary to-sage-dark text-white rounded-xl font-semibold text-sm hover:shadow-lg hover:shadow-sage-primary/25 transition-all disabled:opacity-50 btn-press"
         >
-          {loading ? 'Saving...' : 'Save All Settings'}
+          {loading ? (
+            <>
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <Save className="w-5 h-5" />
+              Save All Settings
+            </>
+          )}
         </button>
       </div>
     </AppLayout>

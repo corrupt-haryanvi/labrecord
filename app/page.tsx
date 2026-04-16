@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { useAuth } from '@/lib/AuthContext';
-import { Activity } from 'lucide-react';
+import { Activity, Mail, Lock, ArrowRight } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -37,60 +37,108 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg-warm py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-sm border border-border-color">
-        <div className="text-center">
-          <div className="font-serif text-3xl font-bold text-sage-primary flex items-center justify-center gap-2 mb-2">
-            <div className="w-3 h-3 bg-accent-warm rounded-full"></div>
-            Clinique Lab
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-bg-warm via-bg-warm to-sage-light/30 py-12 px-4 sm:px-6 lg:px-8">
+      {/* Background decoration */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-sage-primary/5 rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-accent-warm/5 rounded-full blur-3xl" />
+      </div>
+      
+      <div className="relative max-w-md w-full animate-scale-in">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-gradient-to-br from-sage-primary to-sage-dark rounded-2xl flex items-center justify-center shadow-lg shadow-sage-primary/30">
+              <Activity className="w-7 h-7 text-white" />
+            </div>
+            <span className="text-2xl font-semibold text-text-main tracking-tight">
+              Lab<span className="text-sage-primary">Manager</span>
+            </span>
           </div>
-          <h2 className="mt-6 text-2xl font-semibold text-text-main">
-            Sign in to your account
+          <h2 className="text-2xl font-semibold text-text-main">
+            Welcome back
           </h2>
+          <p className="text-text-muted mt-2">
+            Sign in to access your dashboard
+          </p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="bg-red-50 text-red-500 p-3 rounded-md text-sm text-center">
-              {error}
-            </div>
-          )}
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-text-muted">Email address</label>
-              <input
-                type="email"
-                required
-                className="mt-1 block w-full px-3 py-2 border border-border-color rounded-lg shadow-sm focus:outline-none focus:ring-sage-primary focus:border-sage-primary sm:text-sm bg-bg-warm font-semibold text-text-main"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-muted">Password</label>
-              <input
-                type="password"
-                required
-                className="mt-1 block w-full px-3 py-2 border border-border-color rounded-lg shadow-sm focus:outline-none focus:ring-sage-primary focus:border-sage-primary sm:text-sm bg-bg-warm font-semibold text-text-main"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
 
-          <div>
+        {/* Card */}
+        <div className="bg-white p-8 rounded-2xl shadow-xl shadow-black/5 border border-border-color">
+          <form className="space-y-5" onSubmit={handleSubmit}>
+            {error && (
+              <div className="bg-red-50 text-red-600 px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 animate-fade-in">
+                <div className="w-2 h-2 rounded-full bg-red-500" />
+                {error}
+              </div>
+            )}
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-text-main mb-2">
+                  Email address
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="you@example.com"
+                    className="w-full pl-11 pr-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main placeholder:text-text-muted/50 transition-all"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-text-main mb-2">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
+                  <input
+                    type="password"
+                    required
+                    placeholder="Enter your password"
+                    className="w-full pl-11 pr-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main placeholder:text-text-muted/50 transition-all"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-semibold text-white bg-sage-primary hover:bg-sage-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sage-primary disabled:opacity-50 transition-colors"
+              className="w-full flex items-center justify-center gap-2 py-3.5 px-4 bg-gradient-to-r from-sage-primary to-sage-dark text-white rounded-xl font-semibold shadow-lg shadow-sage-primary/25 hover:shadow-xl hover:shadow-sage-primary/30 focus:outline-none focus:ring-2 focus:ring-sage-primary/50 disabled:opacity-50 transition-all duration-200 btn-press group"
             >
-              {loading ? 'Processing...' : 'Sign In'}
+              {loading ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Signing in...</span>
+                </>
+              ) : (
+                <>
+                  <span>Sign In</span>
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
+                </>
+              )}
             </button>
-          </div>
+          </form>
           
-          <div className="text-center mt-4 text-sm text-text-muted">
-            Contact your administrator to create an account.
+          <div className="mt-6 pt-6 border-t border-border-color text-center">
+            <p className="text-sm text-text-muted">
+              Need an account? Contact your administrator.
+            </p>
           </div>
-        </form>
+        </div>
+
+        {/* Footer */}
+        <p className="mt-8 text-center text-sm text-text-muted">
+          Secure lab management for healthcare professionals
+        </p>
       </div>
     </div>
   );

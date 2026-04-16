@@ -3,39 +3,62 @@
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/lib/AuthContext';
 import { useEffect, useState } from 'react';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { db, auth } from '@/lib/firebase';
-import { handleFirestoreError, OperationType } from '@/lib/firestore-error';
+import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { Plus, Search, FileText, Calendar, Eye, Edit3, User } from 'lucide-react';
 import { format } from 'date-fns';
 
+interface Report {
+  id: string;
+  patient_name: string;
+  test_name: string;
+  test_date: string;
+  status: string;
+  created_at: string;
+}
+
 export default function ReportsPage() {
   const { user } = useAuth();
-  const [reports, setReports] = useState<any[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const supabase = createClient();
 
   useEffect(() => {
     if (!user) return;
     
-    const q = query(collection(db, 'reports'), where('doctorId', '==', user.uid));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const reps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      reps.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      setReports(reps);
+    const fetchReports = async () => {
+      const { data, error } = await supabase
+        .from('reports')
+        .select('*')
+        .order('test_date', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching reports:', error);
+      } else {
+        setReports(data || []);
+      }
       setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'reports', auth);
-      setLoading(false);
-    });
+    };
 
-    return () => unsubscribe();
-  }, [user]);
+    fetchReports();
+
+    // Subscribe to realtime updates
+    const channel = supabase
+      .channel('reports_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, () => {
+        fetchReports();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, supabase]);
 
   const filteredReports = reports.filter(r => 
-    r.patientName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    r.templateName.toLowerCase().includes(searchTerm.toLowerCase())
+    r.patient_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    r.test_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -76,6 +99,7 @@ export default function ReportsPage() {
                 <th className="px-6 py-4 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Patient</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Test Type</th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Date</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-text-muted uppercase tracking-wider">Status</th>
                 <th className="px-6 py-4 text-right text-xs font-semibold text-text-muted uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -86,6 +110,7 @@ export default function ReportsPage() {
                     <td className="px-6 py-4"><div className="h-5 bg-bg-subtle rounded w-32" /></td>
                     <td className="px-6 py-4"><div className="h-5 bg-bg-subtle rounded w-28" /></td>
                     <td className="px-6 py-4"><div className="h-5 bg-bg-subtle rounded w-32" /></td>
+                    <td className="px-6 py-4"><div className="h-5 bg-bg-subtle rounded w-20" /></td>
                     <td className="px-6 py-4"><div className="h-5 bg-bg-subtle rounded w-24 ml-auto" /></td>
                   </tr>
                 ))
@@ -101,7 +126,7 @@ export default function ReportsPage() {
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-100 to-amber-200/50 flex items-center justify-center">
                           <User className="w-5 h-5 text-amber-600" />
                         </div>
-                        <span className="font-semibold text-text-main">{report.patientName}</span>
+                        <span className="font-semibold text-text-main">{report.patient_name}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -109,14 +134,24 @@ export default function ReportsPage() {
                         <div className="w-8 h-8 rounded-lg bg-sage-light flex items-center justify-center">
                           <FileText className="w-4 h-4 text-sage-primary" />
                         </div>
-                        <span className="text-text-muted font-medium">{report.templateName}</span>
+                        <span className="text-text-muted font-medium">{report.test_name}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-1.5 text-sm text-text-muted">
                         <Calendar className="w-3.5 h-3.5" />
-                        {format(new Date(report.date), 'MMM d, yyyy h:mm a')}
+                        {format(new Date(report.test_date), 'MMM d, yyyy')}
                       </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`
+                        inline-flex px-2.5 py-1 rounded-full text-xs font-semibold
+                        ${report.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : 
+                          report.status === 'Pending' ? 'bg-amber-100 text-amber-700' : 
+                          'bg-red-100 text-red-700'}
+                      `}>
+                        {report.status}
+                      </span>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end gap-2">
@@ -140,7 +175,7 @@ export default function ReportsPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center">
+                  <td colSpan={5} className="px-6 py-12 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-16 h-16 rounded-2xl bg-bg-subtle flex items-center justify-center">
                         <FileText className="w-8 h-8 text-text-muted" />

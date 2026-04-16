@@ -3,30 +3,31 @@
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/lib/AuthContext';
 import { useEffect, useState } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { createClient } from '@/lib/supabase/client';
 import { Users, FileText, TrendingUp, Clock, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [stats, setStats] = useState({ patients: 0, reports: 0 });
+  const [stats, setStats] = useState({ patients: 0, reports: 0, pending: 0 });
   const [loading, setLoading] = useState(true);
+  const supabase = createClient();
 
   useEffect(() => {
     if (!user) return;
     
     const fetchStats = async () => {
       try {
-        const patientsQuery = query(collection(db, 'patients'), where('doctorId', '==', user.uid));
-        const patientsSnapshot = await getDocs(patientsQuery);
-        
-        const reportsQuery = query(collection(db, 'reports'), where('doctorId', '==', user.uid));
-        const reportsSnapshot = await getDocs(reportsQuery);
+        const [patientsResult, reportsResult, pendingResult] = await Promise.all([
+          supabase.from('patients').select('id', { count: 'exact', head: true }),
+          supabase.from('reports').select('id', { count: 'exact', head: true }),
+          supabase.from('reports').select('id', { count: 'exact', head: true }).eq('status', 'Pending')
+        ]);
         
         setStats({
-          patients: patientsSnapshot.size,
-          reports: reportsSnapshot.size
+          patients: patientsResult.count || 0,
+          reports: reportsResult.count || 0,
+          pending: pendingResult.count || 0
         });
       } catch (error) {
         console.error("Error fetching stats:", error);
@@ -36,7 +37,7 @@ export default function DashboardPage() {
     };
 
     fetchStats();
-  }, [user]);
+  }, [user, supabase]);
 
   const statCards = [
     {
@@ -44,7 +45,6 @@ export default function DashboardPage() {
       value: stats.patients,
       icon: Users,
       color: 'bg-gradient-to-br from-teal-500 to-teal-600',
-      lightColor: 'bg-teal-50',
       textColor: 'text-teal-600',
     },
     {
@@ -52,7 +52,6 @@ export default function DashboardPage() {
       value: stats.reports,
       icon: FileText,
       color: 'bg-gradient-to-br from-amber-500 to-orange-500',
-      lightColor: 'bg-amber-50',
       textColor: 'text-amber-600',
     },
     {
@@ -60,15 +59,13 @@ export default function DashboardPage() {
       value: stats.reports > 0 ? Math.ceil(stats.reports * 0.3) : 0,
       icon: TrendingUp,
       color: 'bg-gradient-to-br from-emerald-500 to-emerald-600',
-      lightColor: 'bg-emerald-50',
       textColor: 'text-emerald-600',
     },
     {
       label: 'Pending',
-      value: 0,
+      value: stats.pending,
       icon: Clock,
       color: 'bg-gradient-to-br from-slate-500 to-slate-600',
-      lightColor: 'bg-slate-50',
       textColor: 'text-slate-600',
     },
   ];
@@ -87,7 +84,7 @@ export default function DashboardPage() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 stagger-children">
-        {statCards.map((stat, index) => (
+        {statCards.map((stat) => (
           <div
             key={stat.label}
             className="group bg-white p-5 rounded-2xl border border-border-color card-hover"
@@ -103,7 +100,7 @@ export default function DashboardPage() {
                   )}
                 </p>
               </div>
-              <div className={`w-12 h-12 rounded-xl ${stat.color} flex items-center justify-center shadow-lg shadow-${stat.color}/20 group-hover:scale-110 transition-transform duration-300`}>
+              <div className={`w-12 h-12 rounded-xl ${stat.color} flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300`}>
                 <stat.icon className="w-6 h-6 text-white" />
               </div>
             </div>

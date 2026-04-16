@@ -4,12 +4,10 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { auth } from '@/lib/firebase';
-import { signOut } from 'firebase/auth';
 import { Users, FileText, Settings, LogOut, LayoutDashboard, Plus, ChevronRight, Activity } from 'lucide-react';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -30,7 +28,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await signOut();
     router.push('/');
   };
 

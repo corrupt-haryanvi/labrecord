@@ -3,14 +3,19 @@
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/lib/AuthContext';
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc, doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '@/lib/firebase';
-import { handleFirestoreError, OperationType } from '@/lib/firestore-error';
+import { createClient } from '@/lib/supabase/client';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { LAB_TEMPLATES } from '@/lib/templates';
 import Link from 'next/link';
 import { useToast } from '@/components/Toast';
-import { ArrowLeft, User, FileText, Calendar, Hash, Building, Check, X } from 'lucide-react';
+import { ArrowLeft, User, FileText, Calendar, Check, X } from 'lucide-react';
+
+interface Patient {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+}
 
 export default function NewReportPage() {
   const { user } = useAuth();
@@ -18,37 +23,35 @@ export default function NewReportPage() {
   const searchParams = useSearchParams();
   const preselectedPatientId = searchParams.get('patientId');
   const { showToast } = useToast();
+  const supabase = createClient();
   
-  const [patients, setPatients] = useState<any[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(false);
   
   const [selectedPatientId, setSelectedPatientId] = useState(preselectedPatientId || '');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [results, setResults] = useState<Record<string, string>>({});
-  
-  const [reportDetails, setReportDetails] = useState({
-    visitLabNo: '',
-    referLabHosp: 'SELF',
-    refClient: '',
-    barcodeNo: '',
-    sampleCollectionDate: new Date().toISOString().slice(0, 16),
-    sampleReceivedDate: new Date().toISOString().slice(0, 16)
-  });
+  const [testDate, setTestDate] = useState(new Date().toISOString().slice(0, 10));
+  const [notes, setNotes] = useState('');
 
   useEffect(() => {
     if (!user) return;
+    
     const fetchPatients = async () => {
-      try {
-        const q = query(collection(db, 'patients'), where('doctorId', '==', user.uid));
-        const snapshot = await getDocs(q);
-        const pts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setPatients(pts);
-      } catch (error) {
-        handleFirestoreError(error, OperationType.LIST, 'patients', auth);
+      const { data, error } = await supabase
+        .from('patients')
+        .select('id, name, phone, email')
+        .order('name');
+      
+      if (error) {
+        console.error('Error fetching patients:', error);
+      } else {
+        setPatients(data || []);
       }
     };
+    
     fetchPatients();
-  }, [user]);
+  }, [user, supabase]);
 
   const selectedTemplate = LAB_TEMPLATES.find(t => t.id === selectedTemplateId);
 
@@ -62,34 +65,30 @@ export default function NewReportPage() {
     
     setLoading(true);
     try {
-      const doctorDoc = await getDoc(doc(db, 'users', user.uid));
-      const doctorData = doctorDoc.data() || {};
-      
       const patient = patients.find(p => p.id === selectedPatientId);
       
-      const reportRef = await addDoc(collection(db, 'reports'), {
-        doctorId: user.uid,
-        patientId: selectedPatientId,
-        patientName: patient?.name || 'Unknown',
-        templateId: selectedTemplate.id,
-        templateName: selectedTemplate.name,
-        results,
-        date: new Date().toISOString(),
-        doctorStampBase64: doctorData.doctorStampBase64 || '',
-        clinicName: doctorData.clinicName || 'Lab Clinic',
-        visitLabNo: reportDetails.visitLabNo,
-        referLabHosp: reportDetails.referLabHosp,
-        refClient: reportDetails.refClient,
-        barcodeNo: reportDetails.barcodeNo,
-        sampleCollectionDate: new Date(reportDetails.sampleCollectionDate).toISOString(),
-        sampleReceivedDate: new Date(reportDetails.sampleReceivedDate).toISOString(),
-        registrationDate: patient?.createdAt || new Date().toISOString()
-      });
+      const { data, error } = await supabase.from('reports').insert({
+        user_id: user.id,
+        patient_id: selectedPatientId,
+        patient_name: patient?.name || 'Unknown',
+        test_name: selectedTemplate.name,
+        test_date: testDate,
+        results: selectedTemplate.fields.map(field => ({
+          name: field.name,
+          value: results[field.name] || '',
+          unit: field.unit,
+          normalRange: field.normalRange
+        })),
+        notes: notes || null,
+        status: 'Completed'
+      }).select().single();
+
+      if (error) throw error;
       
       showToast('Report created successfully!', 'success');
-      router.push(`/reports/${reportRef.id}`);
+      router.push(`/reports/${data.id}`);
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'reports', auth);
+      console.error('Error creating report:', error);
       showToast('Failed to create report. Please try again.', 'error');
     } finally {
       setLoading(false);
@@ -120,7 +119,7 @@ export default function NewReportPage() {
               <User className="w-4 h-4 text-sage-primary" />
               Patient & Test Selection
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-text-muted mb-2">Select Patient *</label>
                 <select
@@ -153,82 +152,17 @@ export default function NewReportPage() {
                   ))}
                 </select>
               </div>
-            </div>
-          </div>
 
-          {/* Report Details */}
-          <div className="pt-4 border-t border-border-color">
-            <h3 className="text-sm font-semibold text-text-main uppercase tracking-wider mb-4 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-sage-primary" />
-              Report Details
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">Visit/Lab No</label>
-                <div className="relative">
-                  <Hash className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                  <input
-                    type="text"
-                    placeholder="Lab number"
-                    className="w-full pl-11 pr-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
-                    value={reportDetails.visitLabNo}
-                    onChange={(e) => setReportDetails({...reportDetails, visitLabNo: e.target.value})}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">Barcode No</label>
-                <input
-                  type="text"
-                  placeholder="Barcode"
-                  className="w-full px-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
-                  value={reportDetails.barcodeNo}
-                  onChange={(e) => setReportDetails({...reportDetails, barcodeNo: e.target.value})}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">Refer Lab/Hosp</label>
-                <div className="relative">
-                  <Building className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                  <input
-                    type="text"
-                    className="w-full pl-11 pr-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
-                    value={reportDetails.referLabHosp}
-                    onChange={(e) => setReportDetails({...reportDetails, referLabHosp: e.target.value})}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">Ref. Client</label>
-                <input
-                  type="text"
-                  placeholder="Client reference"
-                  className="w-full px-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
-                  value={reportDetails.refClient}
-                  onChange={(e) => setReportDetails({...reportDetails, refClient: e.target.value})}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">Sample Collection</label>
+                <label className="block text-sm font-medium text-text-muted mb-2">Test Date *</label>
                 <div className="relative">
                   <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                   <input
-                    type="datetime-local"
+                    type="date"
+                    required
                     className="w-full pl-11 pr-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
-                    value={reportDetails.sampleCollectionDate}
-                    onChange={(e) => setReportDetails({...reportDetails, sampleCollectionDate: e.target.value})}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-text-muted mb-2">Sample Received</label>
-                <div className="relative">
-                  <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                  <input
-                    type="datetime-local"
-                    className="w-full pl-11 pr-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all"
-                    value={reportDetails.sampleReceivedDate}
-                    onChange={(e) => setReportDetails({...reportDetails, sampleReceivedDate: e.target.value})}
+                    value={testDate}
+                    onChange={(e) => setTestDate(e.target.value)}
                   />
                 </div>
               </div>
@@ -238,7 +172,8 @@ export default function NewReportPage() {
           {/* Results Table */}
           {selectedTemplate && (
             <div className="pt-4 border-t border-border-color animate-fade-in">
-              <h3 className="text-sm font-semibold text-text-main uppercase tracking-wider mb-4">
+              <h3 className="text-sm font-semibold text-text-main uppercase tracking-wider mb-4 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-sage-primary" />
                 Enter Results for {selectedTemplate.name}
               </h3>
               
@@ -272,6 +207,18 @@ export default function NewReportPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Notes */}
+              <div className="mt-4">
+                <label className="block text-sm font-medium text-text-muted mb-2">Notes (Optional)</label>
+                <textarea
+                  rows={3}
+                  placeholder="Add any additional notes..."
+                  className="w-full px-4 py-3 border border-border-color rounded-xl focus:outline-none focus:ring-2 focus:ring-sage-primary/20 focus:border-sage-primary bg-bg-warm/50 font-medium text-text-main transition-all resize-none"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
               </div>
             </div>
           )}

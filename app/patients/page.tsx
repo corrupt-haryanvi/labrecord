@@ -3,36 +3,59 @@
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/lib/AuthContext';
 import { useEffect, useState } from 'react';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { handleFirestoreError, OperationType } from '@/lib/firestore-error';
-import { auth } from '@/lib/firebase';
+import { createClient } from '@/lib/supabase/client';
 import Link from 'next/link';
 import { Plus, Search, User, Calendar, Phone, Mail, FileText, Edit3 } from 'lucide-react';
 import { format } from 'date-fns';
 
+interface Patient {
+  id: string;
+  name: string;
+  age: number;
+  gender: string;
+  phone: string | null;
+  email: string | null;
+  created_at: string;
+}
+
 export default function PatientsPage() {
   const { user } = useAuth();
-  const [patients, setPatients] = useState<any[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const supabase = createClient();
 
   useEffect(() => {
     if (!user) return;
     
-    const q = query(collection(db, 'patients'), where('doctorId', '==', user.uid));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const pts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      pts.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setPatients(pts);
+    const fetchPatients = async () => {
+      const { data, error } = await supabase
+        .from('patients')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching patients:', error);
+      } else {
+        setPatients(data || []);
+      }
       setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'patients', auth);
-      setLoading(false);
-    });
+    };
 
-    return () => unsubscribe();
-  }, [user]);
+    fetchPatients();
+
+    // Subscribe to realtime updates
+    const channel = supabase
+      .channel('patients_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'patients' }, () => {
+        fetchPatients();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, supabase]);
 
   const filteredPatients = patients.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -132,7 +155,7 @@ export default function PatientsPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-1.5 text-sm text-text-muted">
                         <Calendar className="w-3.5 h-3.5" />
-                        {format(new Date(patient.createdAt), 'MMM d, yyyy')}
+                        {format(new Date(patient.created_at), 'MMM d, yyyy')}
                       </div>
                     </td>
                     <td className="px-6 py-4">
